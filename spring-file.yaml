@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spring-file
+  namespace: mquality
+  labels:
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: spring-file
+  template:
+    metadata:
+      labels:
+        app: spring-file
+    spec:
+      serviceAccountName: workload-identity-ksa
+      automountServiceAccountToken: false
+      nodeSelector:
+        iam.gke.io/gke-metadata-server-enabled: "true"
+      terminationGracePeriodSeconds: 60         
+      containers:
+      - name: spring-file
+        image: eu.gcr.io/lustrous-bus-376910/spring-file:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        livenessProbe:
+          failureThreshold: 7
+          httpGet:
+            httpHeaders:
+            - name: Authorization
+              value: Basic ZHVtbXk6ZHVtbXk
+            path: /actuator/health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 20
+          periodSeconds: 90
+          successThreshold: 1
+          timeoutSeconds: 15
+        readinessProbe:
+          failureThreshold: 7
+          httpGet:
+            httpHeaders:
+            - name: Authorization
+              value: Basic ZHVtbXk6ZHVtbXk
+            path: /actuator/health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 20
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 15
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+              - SYS_ADMIN
+        lifecycle:
+          postStart:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - mkdir -p /mnt && gcsfuse --debug_gcs --debug_http --debug_fuse --debug_invariants my-app-bucket-store /mnt
+          preStop:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - sleep 60 && fusermount -u /mnt
